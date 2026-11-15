@@ -2,6 +2,14 @@ package com.chewanninja.matematikmaster
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -80,6 +88,26 @@ fun QuizSetupScreen(vm: AppViewModel, mode: Mode) {
 
 // ===================== KUIZ =====================
 @Composable
+private fun OptionCard(
+    letter: String, text: String, bg: Color, bc: Color, big: Boolean,
+    modifier: Modifier, onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(20.dp)
+    Row(
+        modifier.focusRing(shape).clip(shape).background(bg).border(3.dp, bc, shape)
+            .clickable(onClick = onClick).padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(if (big) 48.dp else 34.dp).clip(CircleShape).background(Navy),
+            contentAlignment = Alignment.Center
+        ) { T(letter, if (big) 22 else 16, true, Color.White) }
+        Spacer(Modifier.width(14.dp))
+        T(text, if (big) 28 else 20, true)
+    }
+}
+
+@Composable
 fun QuizScreen(vm: AppViewModel) {
     val s = vm.session ?: return
     var confirmExit by remember { mutableStateOf(false) }
@@ -99,65 +127,50 @@ fun QuizScreen(vm: AppViewModel) {
     val q = s.questions[s.index]
     val last = s.index == s.questions.size - 1
     val chosen = s.chosen[s.index]
+    val letters = listOf("A", "B", "C", "D")
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(s.index) {
+        try {
+            firstFocus.requestFocus()
+        } catch (e: Exception) {
+        }
+    }
 
-    Page("${s.mode.label} • Tahun ${s.tahun}", null) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            T("Soalan ${s.index + 1}/${s.questions.size}", 16, true, modifier = Modifier.weight(1f))
-            if (exam) {
-                val low = remaining < 60
-                T("⏱ %d:%02d".format(remaining / 60, remaining % 60), 18, true, if (low) Coral else Navy)
+    val optionAt: @Composable (Int, Modifier, Boolean) -> Unit = { i, m, big ->
+        val bg: Color
+        val bc: Color
+        if (!exam && s.revealed) {
+            bg = when {
+                i == q.answer -> Color(0xFFD4F5E4)
+                i == chosen -> Color(0xFFFFDADA)
+                else -> Color.White
+            }
+            bc = when {
+                i == q.answer -> Mint
+                i == chosen -> Coral
+                else -> Soft
+            }
+        } else {
+            bg = if (exam && chosen == i) Color(0xFFCFE2FF) else Color.White
+            bc = if (exam && chosen == i) Sky else Soft
+        }
+        val mm = if (i == 0) m.focusRequester(firstFocus) else m
+        OptionCard(letters[i], q.options[i], bg, bc, big, mm) { vm.choose(i) }
+    }
+
+    val feedback: @Composable () -> Unit = {
+        if (!exam && s.revealed) {
+            val ok = chosen == q.answer
+            Panel(color = if (ok) Color(0xFFD4F5E4) else Color(0xFFFFEFD5)) {
+                T(if (ok) "✅ Betul! Syabas!" else "❌ Belum tepat. Jawapan: ${q.options[q.answer]}", 18, true)
+                T("💡 ${q.explanation}", 15)
             }
         }
-        Box(Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)).background(Soft)) {
-            Box(
-                Modifier.fillMaxWidth((s.index + 1) / s.questions.size.toFloat())
-                    .height(10.dp).background(Sky)
-            )
-        }
-        Panel {
-            T(q.topic, 12, false, Color.Gray)
-            T(q.text, 22, true)
-        }
-        val letters = listOf("A", "B", "C", "D")
-        q.options.forEachIndexed { i, opt ->
-            val bg: Color
-            val bc: Color
-            if (!exam && s.revealed) {
-                bg = when {
-                    i == q.answer -> Color(0xFFD4F5E4)
-                    i == chosen -> Color(0xFFFFDADA)
-                    else -> Color.White
-                }
-                bc = when {
-                    i == q.answer -> Mint
-                    i == chosen -> Coral
-                    else -> Soft
-                }
-            } else {
-                bg = if (exam && chosen == i) Color(0xFFCFE2FF) else Color.White
-                bc = if (exam && chosen == i) Sky else Soft
-            }
-            val shape = RoundedCornerShape(16.dp)
-            Row(
-                Modifier.fillMaxWidth().focusRing(shape).clip(shape).background(bg)
-                    .border(2.dp, bc, shape)
-                    .clickable { vm.choose(i) }.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(Modifier.size(34.dp).clip(CircleShape).background(Navy), contentAlignment = Alignment.Center) {
-                    T(letters[i], 16, true, Color.White)
-                }
-                Spacer(Modifier.width(12.dp))
-                T(opt, 20, true)
-            }
-        }
+    }
+
+    val controls: @Composable () -> Unit = {
         if (!exam) {
             if (s.revealed) {
-                val ok = chosen == q.answer
-                Panel(color = if (ok) Color(0xFFD4F5E4) else Color(0xFFFFEFD5)) {
-                    T(if (ok) "✅ Betul! Syabas!" else "❌ Belum tepat. Jawapan: ${q.options[q.answer]}", 18, true)
-                    T("💡 ${q.explanation}", 15)
-                }
                 if (last) BigButton("🏁 Selesai", Mint) { vm.finishQuiz() }
                 else BigButton("Soalan Seterusnya ➡", Sky) { vm.nextQ() }
             }
@@ -167,6 +180,59 @@ fun QuizScreen(vm: AppViewModel) {
                 BigButton("Seterusnya ➡", Sky, Modifier.weight(1f), enabled = !last) { vm.nextQ() }
             }
             BigButton("📤 Hantar Jawapan", Mint) { confirmSubmit = true }
+        }
+    }
+
+    // Latar belakang: tukar dua warna di bawah untuk ubah rupa latar.
+    BoxWithConstraints(
+        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFFEAF2FF), Color(0xFFCFE0FF))))
+    ) {
+        val wide = maxWidth > maxHeight   // skrin TV / tablet melintang
+        Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                T("${s.mode.label} • Tahun ${s.tahun}  |  Soalan ${s.index + 1}/${s.questions.size}", 16, true, modifier = Modifier.weight(1f))
+                if (exam) {
+                    T("⏱ %d:%02d".format(remaining / 60, remaining % 60), 20, true, if (remaining < 60) Coral else Navy)
+                }
+            }
+            Box(Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)).background(Color.White)) {
+                Box(Modifier.fillMaxWidth((s.index + 1) / s.questions.size.toFloat()).height(10.dp).background(Sky))
+            }
+            if (wide) {
+                // TV / mendatar: soalan di kiri, 4 jawapan 2x2 memenuhi skrin di kanan (tanpa skrol)
+                Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Panel(Modifier.weight(1f)) {
+                            T(q.topic, 13, false, Color.Gray)
+                            Column(Modifier.verticalScroll(rememberScrollState())) { T(q.text, 30, true) }
+                        }
+                        feedback()
+                        controls()
+                    }
+                    Column(Modifier.weight(1.3f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        for (r in 0..1) {
+                            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                for (c in 0..1) {
+                                    optionAt(r * 2 + c, Modifier.weight(1f).fillMaxHeight(), true)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Telefon menegak: susunan biasa
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Panel {
+                        T(q.topic, 12, false, Color.Gray)
+                        T(q.text, 22, true)
+                    }
+                    for (i in q.options.indices) {
+                        optionAt(i, Modifier.fillMaxWidth(), false)
+                    }
+                    feedback()
+                    controls()
+                }
+            }
         }
     }
 
